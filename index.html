@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ro">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sea Skipper Trainer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <h1>Sea Skipper Trainer</h1>
+        <p>Învață inteligent. Testează sigur.</p>
+      </header>
+
+      <main id="app" class="container">
+        <section class="card" id="homeView">
+          <h2>Alege modul</h2>
+          <p class="muted">Întrebări oficiale, progres salvat local pe dispozitiv.</p>
+          <div class="grid two">
+            <button class="btn primary" id="goLearning">Learning Journey</button>
+            <button class="btn" id="goTesting">Testing Journey</button>
+          </div>
+        </section>
+
+        <section class="card hidden" id="learningSetupView">
+          <div class="row-between">
+            <h2>Learning Journey</h2>
+            <button class="btn ghost" data-back-home>Înapoi</button>
+          </div>
+          <p>Alege cum vrei să pornești sesiunea de învățare.</p>
+          <div class="grid two">
+            <button class="btn primary" id="learningSequential">Start de la început</button>
+            <button class="btn" id="learningRandom">Start random</button>
+          </div>
+          <div class="stats-grid">
+            <div class="stat"><span>Total întrebări</span><strong id="learningTotalCount">-</strong></div>
+            <div class="stat"><span>Corecte</span><strong id="learningGoodCount">-</strong></div>
+            <div class="stat"><span>Greșite</span><strong id="learningBadCount">-</strong></div>
+            <div class="stat"><span>Completare</span><strong id="learningCompletedPct">-</strong></div>
+          </div>
+        </section>
+
+        <section class="card hidden" id="learningView">
+          <div class="row-between wrap-gap">
+            <h2>Learning Journey</h2>
+            <div class="actions-inline">
+              <button class="btn ghost" id="learningBackSetup">Setări</button>
+              <button class="btn ghost" data-back-home>Acasă</button>
+            </div>
+          </div>
+
+          <div class="progress-wrap">
+            <div class="progress-head">
+              <span id="learningPosition">Întrebarea 1 / 1</span>
+              <span id="learningModeBadge" class="badge">-</span>
+            </div>
+            <div class="progress-bar"><div id="learningProgressFill"></div></div>
+          </div>
+
+          <article class="question-block">
+            <p class="qid" id="learningQuestionId">ID #</p>
+            <h3 id="learningQuestionText"></h3>
+            <div id="learningAnswers" class="answers"></div>
+            <p id="learningFeedback" class="feedback"></p>
+          </article>
+
+          <div class="grid three">
+            <button class="btn" id="learningPrev">Întrebarea anterioară</button>
+            <button class="btn primary" id="learningSubmit">Verifică răspuns</button>
+            <button class="btn" id="learningNext">Întrebarea următoare</button>
+          </div>
+
+          <section class="review-grid">
+            <div class="review-card">
+              <div class="row-between"><h3>Corecte</h3><span id="reviewGoodCount" class="badge">0</span></div>
+              <div id="reviewGoodList" class="chip-list"></div>
+            </div>
+            <div class="review-card">
+              <div class="row-between"><h3>Greșite</h3><span id="reviewBadCount" class="badge danger">0</span></div>
+              <div id="reviewBadList" class="chip-list"></div>
+            </div>
+          </section>
+        </section>
+
+        <section class="card hidden" id="testingView">
+          <div class="row-between wrap-gap">
+            <h2>Testing Journey</h2>
+            <div class="actions-inline">
+              <button class="btn ghost" id="testingRestart">Test nou random (26)</button>
+              <button class="btn ghost" data-back-home>Acasă</button>
+            </div>
+          </div>
+
+          <p class="muted">Promovezi cu minimum <strong>22</strong> răspunsuri corecte din <strong>26</strong>.</p>
+
+          <div class="progress-wrap">
+            <div class="progress-head">
+              <span id="testingPosition">Întrebarea 1 / 26</span>
+              <span id="testingAnswered">Răspunsuri date: 0 / 26</span>
+            </div>
+            <div class="progress-bar"><div id="testingProgressFill"></div></div>
+          </div>
+
+          <article class="question-block">
+            <p class="qid" id="testingQuestionId">ID #</p>
+            <h3 id="testingQuestionText"></h3>
+            <div id="testingAnswers" class="answers"></div>
+          </article>
+
+          <div class="grid three">
+            <button class="btn" id="testingPrev">Întrebarea anterioară</button>
+            <button class="btn" id="testingNext">Întrebarea următoare</button>
+            <button class="btn primary" id="testingFinish">Finalizează testul</button>
+          </div>
+
+          <section id="testingResult" class="result hidden"></section>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
