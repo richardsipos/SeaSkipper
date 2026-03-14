@@ -21,6 +21,7 @@ pnpm-debug.log*
 .env.development.local
 .env.test.local
 .env.production.local
+.env.*.local
 
 # OS / editor files
 .DS_Store
@@ -34,6 +35,10 @@ coverage/
 # misc
 *.pem
 *.tsbuildinfo
+firebase-debug.log*
+.firebase/
+serviceAccountKey.json
+*-firebase-adminsdk-*.json
 
 # optional: keep generated data or private files out
 # uncomment if needed

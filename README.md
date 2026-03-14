@@ -50,3 +50,7 @@ npm run dev
 ## Firestore (pasul următor)
 
 Progresul este local acum. Pentru Firestore, înlocuiești persistența din `localStorage` din `app/page.js` cu citire/scriere pe colecție utilizator (ex: `users/{uid}/progress`).
+
+Setup pas cu pas este documentat în `FIRESTORE_SETUP.md`.
+
+Helper Firebase client este pregătit în `lib/firebaseClient.js`.

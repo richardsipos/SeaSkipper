@@ -1,6 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut
+} from "firebase/auth";
+import { Timestamp, doc, getDoc, setDoc } from "firebase/firestore";
+
+import { auth, db, firebaseReady } from "../lib/firebaseClient";
 
 const PASS_THRESHOLD = 22;
 const TEST_SIZE = 26;
@@ -20,6 +29,12 @@ export default function HomePage() {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+
+  const [authUser, setAuthUser] = useState(null);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
 
   const [learning, setLearning] = useState({
     mode: "sequential",
@@ -81,6 +96,138 @@ export default function HomePage() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!firebaseReady || !auth) {
+      return;
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setAuthUser(user);
+      setAuthError("");
+
+      if (!user || !db) {
+        return;
+      }
+
+      try {
+        const now = Timestamp.now();
+
+        const userRef = doc(db, "users", user.uid);
+        const userSnap = await getDoc(userRef);
+        const createdAt = userSnap.exists() ? userSnap.data()?.createdAt ?? now : now;
+
+        await setDoc(userRef, {
+          schemaVersion: 1,
+          createdAt,
+          updatedAt: now
+        });
+
+        const progressRef = doc(db, "users", user.uid, "progress", "main");
+        const progressSnap = await getDoc(progressRef);
+        if (!progressSnap.exists()) {
+          await setDoc(progressRef, {
+            schemaVersion: 1,
+            goodIds: [],
+            badIds: [],
+            answersById: {},
+            submittedAnswerIndexById: {},
+            updatedAt: now
+          });
+        }
+      } catch {
+        setAuthError(
+          "Autentificarea a reușit, dar nu pot inițializa progresul în Firestore momentan."
+        );
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  async function registerWithEmailPassword() {
+    if (!firebaseReady || !auth) {
+      setAuthError("Firebase nu este configurat (verifică .env.local).");
+      return;
+    }
+
+    const email = authEmail.trim();
+    const password = authPassword;
+
+    if (!email || !password) {
+      setAuthError("Introdu email și parolă.");
+      return;
+    }
+
+    setAuthBusy(true);
+    setAuthError("");
+
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+      setAuthPassword("");
+    } catch (error) {
+      const code = typeof error?.code === "string" ? error.code : "";
+      if (code === "auth/email-already-in-use") {
+        setAuthError("Există deja un cont cu acest email. Folosește Login.");
+      } else if (code === "auth/invalid-email") {
+        setAuthError("Email invalid.");
+      } else if (code === "auth/weak-password") {
+        setAuthError("Parolă prea slabă (minim 6 caractere).");
+      } else {
+        setAuthError("Nu pot crea contul momentan.");
+      }
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function loginWithEmailPassword() {
+    if (!firebaseReady || !auth) {
+      setAuthError("Firebase nu este configurat (verifică .env.local).");
+      return;
+    }
+
+    const email = authEmail.trim();
+    const password = authPassword;
+
+    if (!email || !password) {
+      setAuthError("Introdu email și parolă.");
+      return;
+    }
+
+    setAuthBusy(true);
+    setAuthError("");
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      setAuthPassword("");
+    } catch (error) {
+      const code = typeof error?.code === "string" ? error.code : "";
+      if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
+        setAuthError("Email sau parolă greșită.");
+      } else if (code === "auth/user-not-found") {
+        setAuthError("Cont inexistent. Folosește Register.");
+      } else {
+        setAuthError("Nu pot face login momentan.");
+      }
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function logout() {
+    if (!auth) {
+      return;
+    }
+
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      await signOut(auth);
+    } finally {
+      setAuthBusy(false);
+    }
+  }
 
   useEffect(() => {
     try {
@@ -380,6 +527,69 @@ export default function HomePage() {
               Începe un test
             </button>
           </article>
+        </section>
+
+        <section className="card auth-card">
+          <div className="row-between wrap-gap">
+            <div>
+              <span className="eyebrow">Cont</span>
+              <h3>{authUser ? "Ești autentificat" : "Register / Login"}</h3>
+            </div>
+            {authUser ? (
+              <button className="btn" onClick={logout} disabled={authBusy}>
+                Logout
+              </button>
+            ) : null}
+          </div>
+
+          {!firebaseReady ? (
+            <p className="muted">
+              Firebase nu este configurat. Completează valorile din .env.local.
+            </p>
+          ) : authUser ? (
+            <p className="muted compact-text">UID: {authUser.uid}</p>
+          ) : (
+            <div className="auth-form">
+              <label className="field">
+                <span className="field-label">Email</span>
+                <input
+                  className="input"
+                  type="email"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  placeholder="email@exemplu.com"
+                  autoComplete="email"
+                />
+              </label>
+
+              <label className="field">
+                <span className="field-label">Parolă</span>
+                <input
+                  className="input"
+                  type="password"
+                  value={authPassword}
+                  onChange={(event) => setAuthPassword(event.target.value)}
+                  placeholder="minim 6 caractere"
+                  autoComplete="current-password"
+                />
+              </label>
+
+              <div className="actions-inline">
+                <button
+                  className="btn primary"
+                  onClick={registerWithEmailPassword}
+                  disabled={authBusy}
+                >
+                  {authBusy ? "Se lucrează..." : "Register"}
+                </button>
+                <button className="btn" onClick={loginWithEmailPassword} disabled={authBusy}>
+                  {authBusy ? "Se lucrează..." : "Login"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {authError ? <p className="result fail compact-text">{authError}</p> : null}
         </section>
       </>
     );
