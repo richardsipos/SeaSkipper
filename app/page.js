@@ -31,10 +31,13 @@ export default function HomePage() {
   const [loadError, setLoadError] = useState("");
 
   const [authUser, setAuthUser] = useState(null);
-  const [authEmail, setAuthEmail] = useState("");
+  const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
+  const [authPanelOpen, setAuthPanelOpen] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
+  const [profileUsername, setProfileUsername] = useState("");
 
   const [learning, setLearning] = useState({
     mode: "sequential",
@@ -97,6 +100,58 @@ export default function HomePage() {
     };
   }, []);
 
+  function normalizeUsername(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase();
+  }
+
+  function isValidUsername(value) {
+    const username = normalizeUsername(value);
+    return /^[a-z0-9._-]{3,20}$/.test(username);
+  }
+
+  function usernameToEmail(value) {
+    return `${normalizeUsername(value)}@seaskipper.local`;
+  }
+
+  async function ensureProgressDoc(uid) {
+    if (!db) {
+      return;
+    }
+
+    const now = Timestamp.now();
+    const progressRef = doc(db, "users", uid, "progress", "main");
+    const progressSnap = await getDoc(progressRef);
+    if (!progressSnap.exists()) {
+      await setDoc(progressRef, {
+        schemaVersion: 1,
+        goodIds: [],
+        badIds: [],
+        answersById: {},
+        submittedAnswerIndexById: {},
+        updatedAt: now
+      });
+    }
+  }
+
+  async function createProfileDocs(uid, username) {
+    if (!db) {
+      return;
+    }
+
+    const now = Timestamp.now();
+    const userRef = doc(db, "users", uid);
+    await setDoc(userRef, {
+      schemaVersion: 1,
+      username: normalizeUsername(username),
+      createdAt: now,
+      updatedAt: now
+    });
+
+    await ensureProgressDoc(uid);
+  }
+
   useEffect(() => {
     if (!firebaseReady || !auth) {
       return;
@@ -106,35 +161,29 @@ export default function HomePage() {
       setAuthUser(user);
       setAuthError("");
 
-      if (!user || !db) {
+      if (!user) {
+        setProfileUsername("");
+        return;
+      }
+
+      setAuthPanelOpen(false);
+
+      if (!db) {
         return;
       }
 
       try {
         const now = Timestamp.now();
-
         const userRef = doc(db, "users", user.uid);
         const userSnap = await getDoc(userRef);
-        const createdAt = userSnap.exists() ? userSnap.data()?.createdAt ?? now : now;
 
-        await setDoc(userRef, {
-          schemaVersion: 1,
-          createdAt,
-          updatedAt: now
-        });
-
-        const progressRef = doc(db, "users", user.uid, "progress", "main");
-        const progressSnap = await getDoc(progressRef);
-        if (!progressSnap.exists()) {
-          await setDoc(progressRef, {
-            schemaVersion: 1,
-            goodIds: [],
-            badIds: [],
-            answersById: {},
-            submittedAnswerIndexById: {},
-            updatedAt: now
-          });
+        if (userSnap.exists()) {
+          const data = userSnap.data();
+          setProfileUsername(typeof data?.username === "string" ? data.username : "");
+          await setDoc(userRef, { updatedAt: now }, { merge: true });
         }
+
+        await ensureProgressDoc(user.uid);
       } catch {
         setAuthError(
           "Autentificarea a reușit, dar nu pot inițializa progresul în Firestore momentan."
@@ -145,34 +194,64 @@ export default function HomePage() {
     return () => unsubscribe();
   }, []);
 
+  function openAuthPanel(mode) {
+    setAuthMode(mode);
+    setAuthPanelOpen(true);
+    setAuthError("");
+  }
+
   async function registerWithEmailPassword() {
     if (!firebaseReady || !auth) {
       setAuthError("Firebase nu este configurat (verifică .env.local).");
       return;
     }
 
-    const email = authEmail.trim();
+    const username = normalizeUsername(authUsername);
     const password = authPassword;
 
-    if (!email || !password) {
-      setAuthError("Introdu email și parolă.");
+    if (!username || !password) {
+      setAuthError("Introdu username și parolă.");
       return;
     }
+
+    if (!isValidUsername(username)) {
+      setAuthError("Username invalid (3-20, litere/cifre și . _ -). ");
+      return;
+    }
+
+    if (password.length < 6) {
+      setAuthError("Parola trebuie să aibă minim 6 caractere.");
+      return;
+    }
+
+    const email = usernameToEmail(username);
 
     setAuthBusy(true);
     setAuthError("");
 
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      await createProfileDocs(cred.user.uid, username);
+      setProfileUsername(username);
       setAuthPassword("");
     } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("Register error", error);
       const code = typeof error?.code === "string" ? error.code : "";
       if (code === "auth/email-already-in-use") {
-        setAuthError("Există deja un cont cu acest email. Folosește Login.");
+        setAuthError("Username deja folosit. Alege alt username sau Login.");
       } else if (code === "auth/invalid-email") {
-        setAuthError("Email invalid.");
+        setAuthError("Username invalid.");
       } else if (code === "auth/weak-password") {
         setAuthError("Parolă prea slabă (minim 6 caractere).");
+      } else if (code === "auth/operation-not-allowed" || code === "auth/configuration-not-found") {
+        setAuthError(
+          "Autentificarea nu este activată în Firebase. Mergi la Firebase Console → Authentication → Sign-in method și activează Email/Password."
+        );
+      } else if (code === "auth/network-request-failed") {
+        setAuthError("Eroare de rețea. Încearcă din nou.");
+      } else if (code === "auth/too-many-requests") {
+        setAuthError("Prea multe încercări. Așteaptă puțin și încearcă din nou.");
       } else {
         setAuthError("Nu pot crea contul momentan.");
       }
@@ -187,26 +266,42 @@ export default function HomePage() {
       return;
     }
 
-    const email = authEmail.trim();
+    const username = normalizeUsername(authUsername);
     const password = authPassword;
 
-    if (!email || !password) {
-      setAuthError("Introdu email și parolă.");
+    if (!username || !password) {
+      setAuthError("Introdu username și parolă.");
       return;
     }
+
+    if (!isValidUsername(username)) {
+      setAuthError("Username invalid.");
+      return;
+    }
+
+    const email = usernameToEmail(username);
 
     setAuthBusy(true);
     setAuthError("");
 
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      setProfileUsername(username);
       setAuthPassword("");
     } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("Login error", error);
       const code = typeof error?.code === "string" ? error.code : "";
       if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
-        setAuthError("Email sau parolă greșită.");
+        setAuthError("Username sau parolă greșită.");
       } else if (code === "auth/user-not-found") {
         setAuthError("Cont inexistent. Folosește Register.");
+      } else if (code === "auth/user-disabled") {
+        setAuthError("Cont dezactivat.");
+      } else if (code === "auth/network-request-failed") {
+        setAuthError("Eroare de rețea. Încearcă din nou.");
+      } else if (code === "auth/too-many-requests") {
+        setAuthError("Prea multe încercări. Așteaptă puțin și încearcă din nou.");
       } else {
         setAuthError("Nu pot face login momentan.");
       }
@@ -463,12 +558,8 @@ export default function HomePage() {
       <>
         <section className="hero-card">
           <div>
-            <span className="eyebrow">Sea Skipper Exam Prep</span>
-            <h2>Pregătire clară, elegantă și ușor de folosit pe telefon</h2>
-            <p className="muted hero-copy">
-              Alege între învățare ghidată și testare reală. Vezi rapid unde greșești,
-              revino doar pe întrebările dificile și urmărește progresul tău.
-            </p>
+            <span className="eyebrow">Dashboard</span>
+            <h2>Progresul tău</h2>
             <div className="actions-inline">
               <button className="btn primary" onClick={openLearningSetup}>
                 Începe învățarea
@@ -496,102 +587,93 @@ export default function HomePage() {
 
         <section className="mode-grid">
           <article className="card mode-card">
-            <span className="badge">Learning Journey</span>
-            <h3>Învață în ritmul tău</h3>
-            <p className="muted">
-              Primești feedback imediat, iar răspunsul corect este evidențiat clar
-              când greșești.
-            </p>
-            <ul className="feature-list">
-              <li>start de la început sau random</li>
-              <li>review rapid pe întrebările greșite</li>
-              <li>resubmit până devin corecte</li>
-            </ul>
+            <span className="badge">Learning</span>
+            <h3>Învățare</h3>
+            <p className="muted">Feedback instant, cu evidențiere clară la greșeli.</p>
             <button className="btn primary" onClick={openLearningSetup}>
               Deschide Learning
             </button>
           </article>
 
           <article className="card mode-card">
-            <span className="badge">Testing Journey</span>
-            <h3>Simulare reală de examen</h3>
-            <p className="muted">
-              Teste random cu 26 întrebări, promovare la minimum 22 răspunsuri corecte.
-            </p>
-            <ul className="feature-list">
-              <li>scorare server-side</li>
-              <li>review complet pentru răspunsurile greșite</li>
-              <li>refacere instant cu un nou set</li>
-            </ul>
+            <span className="badge">Testing</span>
+            <h3>Testare</h3>
+            <p className="muted">26 întrebări random, prag {PASS_THRESHOLD} corecte.</p>
             <button className="btn" onClick={startTesting}>
               Începe un test
             </button>
           </article>
         </section>
-
-        <section className="card auth-card">
-          <div className="row-between wrap-gap">
-            <div>
-              <span className="eyebrow">Cont</span>
-              <h3>{authUser ? "Ești autentificat" : "Register / Login"}</h3>
-            </div>
-            {authUser ? (
-              <button className="btn" onClick={logout} disabled={authBusy}>
-                Logout
-              </button>
-            ) : null}
-          </div>
-
-          {!firebaseReady ? (
-            <p className="muted">
-              Firebase nu este configurat. Completează valorile din .env.local.
-            </p>
-          ) : authUser ? (
-            <p className="muted compact-text">UID: {authUser.uid}</p>
-          ) : (
-            <div className="auth-form">
-              <label className="field">
-                <span className="field-label">Email</span>
-                <input
-                  className="input"
-                  type="email"
-                  value={authEmail}
-                  onChange={(event) => setAuthEmail(event.target.value)}
-                  placeholder="email@exemplu.com"
-                  autoComplete="email"
-                />
-              </label>
-
-              <label className="field">
-                <span className="field-label">Parolă</span>
-                <input
-                  className="input"
-                  type="password"
-                  value={authPassword}
-                  onChange={(event) => setAuthPassword(event.target.value)}
-                  placeholder="minim 6 caractere"
-                  autoComplete="current-password"
-                />
-              </label>
-
-              <div className="actions-inline">
-                <button
-                  className="btn primary"
-                  onClick={registerWithEmailPassword}
-                  disabled={authBusy}
-                >
-                  {authBusy ? "Se lucrează..." : "Register"}
-                </button>
-                <button className="btn" onClick={loginWithEmailPassword} disabled={authBusy}>
-                  {authBusy ? "Se lucrează..." : "Login"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {authError ? <p className="result fail compact-text">{authError}</p> : null}
-        </section>
       </>
+    );
+  }
+
+  function renderAuthPanel() {
+    if (!authPanelOpen) {
+      return null;
+    }
+
+    const title = authMode === "register" ? "Creează cont" : "Autentificare";
+    const primaryAction = authMode === "register" ? registerWithEmailPassword : loginWithEmailPassword;
+    const primaryLabel = authMode === "register" ? "Register" : "Login";
+
+    return (
+      <section className="card auth-panel">
+        <div className="row-between wrap-gap">
+          <div>
+            <span className="eyebrow">Cont</span>
+            <h2>{title}</h2>
+          </div>
+          <button className="btn ghost" onClick={() => setAuthPanelOpen(false)}>
+            Închide
+          </button>
+        </div>
+
+        {!firebaseReady ? (
+          <p className="muted">Firebase nu este configurat. Completează valorile din .env.local.</p>
+        ) : (
+          <div className="auth-form">
+            <label className="field">
+              <span className="field-label">Username</span>
+              <input
+                className="input"
+                type="text"
+                value={authUsername}
+                onChange={(event) => setAuthUsername(event.target.value)}
+                placeholder="ex: Panseluță_01"
+                autoComplete="username"
+              />
+            </label>
+
+            <label className="field">
+              <span className="field-label">Parolă</span>
+              <input
+                className="input"
+                type="password"
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                placeholder="minim 6 caractere"
+                autoComplete={authMode === "register" ? "new-password" : "current-password"}
+              />
+            </label>
+
+            <div className="actions-inline">
+              <button className="btn primary" onClick={primaryAction} disabled={authBusy}>
+                {authBusy ? "Se lucrează..." : primaryLabel}
+              </button>
+              <button
+                className="btn"
+                onClick={() => openAuthPanel(authMode === "register" ? "login" : "register")}
+                disabled={authBusy}
+              >
+                {authMode === "register" ? "Am deja cont" : "Creează cont"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {authError ? <p className="result fail compact-text">{authError}</p> : null}
+      </section>
     );
   }
 
@@ -1029,11 +1111,36 @@ export default function HomePage() {
   return (
     <main>
       <header className="topbar topbar-rich">
-        <h1>Sea Skipper Trainer</h1>
-        <p>Învață inteligent. Testează sigur. Revino exact unde ai greșit.</p>
+        <div className="topbar-inner">
+          <div className="brand">
+            <h1>Sea Skipper Trainer</h1>
+            <p className="topbar-subtitle">Learning + Testing</p>
+          </div>
+
+          <nav className="nav-actions" aria-label="Cont">
+            {authUser ? (
+              <>
+                <span className="nav-user">{profileUsername || "Cont"}</span>
+                <button className="btn" onClick={logout} disabled={authBusy}>
+                  Logout
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="btn" onClick={() => openAuthPanel("login")}>
+                  Login
+                </button>
+                <button className="btn primary" onClick={() => openAuthPanel("register")}>
+                  Register
+                </button>
+              </>
+            )}
+          </nav>
+        </div>
       </header>
 
       <div className="container">
+        {!loading && !loadError ? renderAuthPanel() : null}
         {loading ? <section className="card">Se încarcă întrebările...</section> : null}
         {loadError ? <section className="card result fail">{loadError}</section> : null}
 
