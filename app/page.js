@@ -354,43 +354,6 @@ export default function HomePage() {
     }
   }
 
-  async function readProgressFromFirestore(uid) {
-    if (!db) return null;
-    try {
-      const progressRef = doc(db, "users", uid, "progress", "main");
-      const snap = await getDoc(progressRef);
-      if (snap.exists()) {
-        const data = snap.data();
-        return {
-          goodIds: Array.isArray(data?.goodIds) ? data.goodIds : [],
-          badIds: Array.isArray(data?.badIds) ? data.badIds : [],
-          answersById: typeof data?.answersById === "object" ? data.answersById : {},
-          submittedAnswerIndexById: typeof data?.submittedAnswerIndexById === "object" ? data.submittedAnswerIndexById : {}
-        };
-      }
-    } catch (error) {
-      console.error("Error reading progress from Firestore:", error);
-    }
-    return null;
-  }
-
-  async function writeProgressToFirestore(uid, progress) {
-    if (!db) return;
-    try {
-      const progressRef = doc(db, "users", uid, "progress", "main");
-      await setDoc(progressRef, {
-        schemaVersion: 1,
-        goodIds: progress.goodIds,
-        badIds: progress.badIds,
-        answersById: progress.answersById,
-        submittedAnswerIndexById: progress.submittedAnswerIndexById,
-        updatedAt: Timestamp.now()
-      });
-    } catch (error) {
-      console.error("Error writing progress to Firestore:", error);
-    }
-  }
-
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -436,6 +399,21 @@ export default function HomePage() {
     return () => clearTimeout(timeoutId);
   }, [authUser, learning.progress]);
 
+  useEffect(() => {
+    if (!authPanelOpen) {
+      return;
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        setAuthPanelOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [authPanelOpen]);
+
   const answeredLearningCount = Object.keys(learning.progress.answersById).length;
   const learningCompletion = questions.length
     ? Math.round((answeredLearningCount / questions.length) * 100)
@@ -462,6 +440,14 @@ export default function HomePage() {
 
   function startLearning(mode) {
     const allIds = questions.map((question) => question.id);
+    const answeredIds = Object.keys(learning.progress.answersById)
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id));
+    const lastAnsweredId = answeredIds.length ? Math.max(...answeredIds) : null;
+    const continueFromIndex =
+      lastAnsweredId == null
+        ? 0
+        : Math.min(Math.max(allIds.indexOf(lastAnsweredId) + 1, 0), Math.max(allIds.length - 1, 0));
     const order =
       mode === "mistakes"
         ? [...learning.progress.badIds]
@@ -477,7 +463,7 @@ export default function HomePage() {
       ...prev,
       mode,
       order,
-      currentIndex: 0,
+      currentIndex: mode === "continue" ? continueFromIndex : 0,
       selectedAnswerIndex: null,
       showFeedback: false
     }));
@@ -539,12 +525,16 @@ export default function HomePage() {
         index = 0;
       }
 
+      const savedAnswerIndex = prev.progress.submittedAnswerIndexById[id];
+      const hasAnswered =
+        id in prev.progress.answersById && Number.isInteger(savedAnswerIndex);
+
       return {
         ...prev,
         order,
         currentIndex: index,
-        selectedAnswerIndex: null,
-        showFeedback: false
+        selectedAnswerIndex: hasAnswered ? savedAnswerIndex : null,
+        showFeedback: hasAnswered
       };
     });
     setView("learning");
@@ -704,67 +694,78 @@ export default function HomePage() {
     const primaryLabel = authMode === "register" ? "Register" : "Login";
 
     return (
-      <section className="card auth-panel">
-        <div className="row-between wrap-gap">
-          <div>
-            <span className="eyebrow">Cont</span>
-            <h2>{title}</h2>
-          </div>
-          <button className="btn ghost" onClick={() => setAuthPanelOpen(false)}>
-            Închide
-          </button>
-        </div>
-
-        {!firebaseReady ? (
-          <p className="muted">Firebase nu este configurat. Completează valorile din .env.local.</p>
-        ) : (
-          <div className="auth-form">
-            <label className="field">
-              <span className="field-label">Username</span>
-              <input
-                className="input"
-                type="text"
-                value={authUsername}
-                onChange={(event) => setAuthUsername(event.target.value)}
-                placeholder="ex: Panseluță_01"
-                autoComplete="username"
-              />
-            </label>
-
-            <label className="field">
-              <span className="field-label">Parolă</span>
-              <input
-                className="input"
-                type="password"
-                value={authPassword}
-                onChange={(event) => setAuthPassword(event.target.value)}
-                placeholder="minim 6 caractere"
-                autoComplete={authMode === "register" ? "new-password" : "current-password"}
-              />
-            </label>
-
-            <div className="actions-inline">
-              <button className="btn primary" onClick={primaryAction} disabled={authBusy}>
-                {authBusy ? "Se lucrează..." : primaryLabel}
-              </button>
-              <button
-                className="btn"
-                onClick={() => openAuthPanel(authMode === "register" ? "login" : "register")}
-                disabled={authBusy}
-              >
-                {authMode === "register" ? "Am deja cont" : "Creează cont"}
-              </button>
+      <div className="auth-overlay" onClick={() => setAuthPanelOpen(false)}>
+        <section className="card auth-panel" onClick={(event) => event.stopPropagation()}>
+          <div className="row-between wrap-gap">
+            <div>
+              <span className="eyebrow">Cont</span>
+              <h2>{title}</h2>
             </div>
+            <button className="btn ghost" onClick={() => setAuthPanelOpen(false)}>
+              Inchide
+            </button>
           </div>
-        )}
 
-        {authError ? <p className="result fail compact-text">{authError}</p> : null}
-      </section>
+          {!firebaseReady ? (
+            <p className="muted">Firebase nu este configurat. Completează valorile din .env.local.</p>
+          ) : (
+            <div className="auth-form">
+              <label className="field">
+                <span className="field-label">Username</span>
+                <input
+                  className="input"
+                  type="text"
+                  value={authUsername}
+                  onChange={(event) => setAuthUsername(event.target.value)}
+                  placeholder="ex: Panseluță_01"
+                  autoComplete="username"
+                />
+              </label>
+
+              <label className="field">
+                <span className="field-label">Parolă</span>
+                <input
+                  className="input"
+                  type="password"
+                  value={authPassword}
+                  onChange={(event) => setAuthPassword(event.target.value)}
+                  placeholder="minim 6 caractere"
+                  autoComplete={authMode === "register" ? "new-password" : "current-password"}
+                />
+              </label>
+
+              <div className="actions-inline">
+                <button className="btn primary" onClick={primaryAction} disabled={authBusy}>
+                  {authBusy ? "Se lucrează..." : primaryLabel}
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => openAuthPanel(authMode === "register" ? "login" : "register")}
+                  disabled={authBusy}
+                >
+                  {authMode === "register" ? "Am deja cont" : "Creează cont"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {authError ? <p className="result fail compact-text">{authError}</p> : null}
+        </section>
+      </div>
     );
   }
 
   function renderLearningSetup() {
     const hasMistakes = learning.progress.badIds.length > 0;
+    const allIds = questions.map((question) => question.id);
+    const answeredIds = Object.keys(learning.progress.answersById)
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id));
+    const lastAnsweredId = answeredIds.length ? Math.max(...answeredIds) : null;
+    const continueFromId =
+      lastAnsweredId == null
+        ? allIds[0]
+        : allIds[Math.min(Math.max(allIds.indexOf(lastAnsweredId) + 1, 0), Math.max(allIds.length - 1, 0))];
 
     return (
       <section className="card">
@@ -779,10 +780,19 @@ export default function HomePage() {
         </div>
 
         <p className="muted">
-          Poți începe de la prima întrebare, în ordine random sau doar cu întrebările greșite.
+          Poți continua de unde ai rămas, începe de la prima întrebare, în ordine random sau doar cu întrebările greșite.
         </p>
 
         <div className="grid two action-cards">
+          <button className="action-card" onClick={() => startLearning("continue")}>
+            <strong>Continuă de unde ai rămas</strong>
+            <span>
+              {continueFromId != null
+                ? `Reiei în ordine de la întrebarea ID ${continueFromId}.`
+                : "Nu există întrebări disponibile încă."}
+            </span>
+          </button>
+
           <button
             className="action-card action-card-primary"
             onClick={() => startLearning("sequential")}
@@ -853,6 +863,8 @@ export default function HomePage() {
     const modeLabel =
       learning.mode === "mistakes"
         ? "Review greșeli"
+        : learning.mode === "continue"
+          ? "Continuare"
         : learning.mode === "random"
           ? "Random"
           : "De la început";
@@ -866,8 +878,8 @@ export default function HomePage() {
           </div>
           <div className="actions-inline">
             {learning.mode === "mistakes" ? (
-              <button className="btn ghost" onClick={openLearningSetup}>
-                Învoi la setări
+              <button className="btn ghost" onClick={() => setView("learningSetup")}>
+                Inapoi la Learning
               </button>
             ) : (
               <>
