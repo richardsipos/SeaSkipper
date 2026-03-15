@@ -16,10 +16,9 @@ Aplicație React + Next.js pentru antrenament și testare, folosind baza de înt
   - Evaluare doar dacă toate cele 26 au răspuns.
   - Prag promovare: **22/26**.
 
-- **Backend routes (Next API)**
-  - `GET /api/questions` → toate întrebările.
-  - `GET /api/questions?mode=test&count=26` → subset random.
-  - `POST /api/test` → scorare server-side (pass/fail).
+- **Static-friendly deployment (GitHub Pages)**
+  - Întrebările sunt încărcate din `public/intrebari_c.json`.
+  - Generarea testului și scorarea se fac în client.
 
 ## Rulare locală
 
@@ -42,9 +41,8 @@ npm run dev
 ## Structură principală
 
 - `app/page.js` – UI React pentru Learning + Testing.
-- `app/api/questions/route.js` – endpoint întrebări.
-- `app/api/test/route.js` – endpoint scorare test.
-- `lib/questions.js` – utilitare de citire + randomizare + scor.
+- `.github/workflows/deploy-pages.yml` – build + deploy pe GitHub Pages.
+- `next.config.mjs` – configurare `output: export` pentru hosting static.
 - `intrebari_c.json` – dataset întrebări/răspunsuri.
 
 ## Firestore (pasul următor)

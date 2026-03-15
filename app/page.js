@@ -14,6 +14,7 @@ import { auth, db, firebaseReady } from "../lib/firebaseClient";
 const PASS_THRESHOLD = 22;
 const TEST_SIZE = 26;
 const STORAGE_KEY = "seaskipper-learning-progress-v2";
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 function shuffle(array) {
   const copy = [...array];
@@ -22,6 +23,10 @@ function shuffle(array) {
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
   return copy;
+}
+
+function withBasePath(path) {
+  return `${BASE_PATH}${path}`;
 }
 
 export default function HomePage() {
@@ -74,7 +79,7 @@ export default function HomePage() {
       setLoadError("");
 
       try {
-        const response = await fetch("/api/questions");
+        const response = await fetch(withBasePath("/intrebari_c.json"));
         if (!response.ok) {
           throw new Error("Nu am putut încărca întrebările");
         }
@@ -545,12 +550,7 @@ export default function HomePage() {
     setTesting((prev) => ({ ...prev, loading: true }));
 
     try {
-      const response = await fetch(`/api/questions?mode=test&count=${TEST_SIZE}`);
-      if (!response.ok) {
-        throw new Error("Nu am putut genera testul");
-      }
-
-      const testQuestions = await response.json();
+      const testQuestions = shuffle(questions).slice(0, Math.min(TEST_SIZE, questions.length));
       const order = testQuestions.map((question) => question.id);
 
       setTesting({
@@ -571,18 +571,60 @@ export default function HomePage() {
     setTesting((prev) => ({ ...prev, loading: true }));
 
     try {
-      const response = await fetch("/api/test", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          testIds: testing.order,
-          selectedById: testing.selectedById
-        })
-      });
+      const answeredCount = Object.keys(testing.selectedById).length;
 
-      const payload = await response.json();
+      if (answeredCount < TEST_SIZE) {
+        setTesting((prev) => ({
+          ...prev,
+          loading: false,
+          result: {
+            complete: false,
+            missing: TEST_SIZE - answeredCount,
+            correct: 0,
+            passed: false,
+            threshold: PASS_THRESHOLD,
+            total: TEST_SIZE,
+            wrongAnswers: []
+          }
+        }));
+        return;
+      }
+
+      let correct = 0;
+      const wrongAnswers = testing.order
+        .map((id) => {
+          const question = questionsById.get(id);
+          const selectedIndex = testing.selectedById[id];
+
+          if (!question || selectedIndex == null) {
+            return null;
+          }
+
+          const selectedAnswer = question.answers?.[selectedIndex];
+          const correctAnswer = question.answers?.find((answer) => answer.correct);
+
+          if (selectedAnswer?.correct) {
+            correct += 1;
+            return null;
+          }
+
+          return {
+            id: question.id,
+            question: question.question,
+            selectedAnswer: selectedAnswer?.text || "-",
+            correctAnswer: correctAnswer?.text || "-"
+          };
+        })
+        .filter(Boolean);
+
+      const payload = {
+        complete: true,
+        correct,
+        passed: correct >= PASS_THRESHOLD,
+        threshold: PASS_THRESHOLD,
+        total: TEST_SIZE,
+        wrongAnswers
+      };
 
       setTesting((prev) => ({
         ...prev,
