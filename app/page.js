@@ -136,21 +136,41 @@ export default function HomePage() {
     }
   }
 
-  async function createProfileDocs(uid, username) {
-    if (!db) {
-      return;
+  async function readProgressFromFirestore(uid) {
+    if (!db) return null;
+    try {
+      const progressRef = doc(db, "users", uid, "progress", "main");
+      const snap = await getDoc(progressRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        return {
+          goodIds: Array.isArray(data?.goodIds) ? data.goodIds : [],
+          badIds: Array.isArray(data?.badIds) ? data.badIds : [],
+          answersById: typeof data?.answersById === "object" ? data.answersById : {},
+          submittedAnswerIndexById: typeof data?.submittedAnswerIndexById === "object" ? data.submittedAnswerIndexById : {}
+        };
+      }
+    } catch (error) {
+      console.error("Error reading progress from Firestore:", error);
     }
+    return null;
+  }
 
-    const now = Timestamp.now();
-    const userRef = doc(db, "users", uid);
-    await setDoc(userRef, {
-      schemaVersion: 1,
-      username: normalizeUsername(username),
-      createdAt: now,
-      updatedAt: now
-    });
-
-    await ensureProgressDoc(uid);
+  async function writeProgressToFirestore(uid, progress) {
+    if (!db) return;
+    try {
+      const progressRef = doc(db, "users", uid, "progress", "main");
+      await setDoc(progressRef, {
+        schemaVersion: 1,
+        goodIds: progress.goodIds,
+        badIds: progress.badIds,
+        answersById: progress.answersById,
+        submittedAnswerIndexById: progress.submittedAnswerIndexById,
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      console.error("Error writing progress to Firestore:", error);
+    }
   }
 
   useEffect(() => {
@@ -185,6 +205,15 @@ export default function HomePage() {
         }
 
         await ensureProgressDoc(user.uid);
+
+        // Read progress from Firestore
+        const firestoreProgress = await readProgressFromFirestore(user.uid);
+        if (firestoreProgress) {
+          setLearning((prev) => ({
+            ...prev,
+            progress: firestoreProgress
+          }));
+        }
       } catch {
         setAuthError(
           "Autentificarea a reușit, dar nu pot inițializa progresul în Firestore momentan."
@@ -325,6 +354,43 @@ export default function HomePage() {
     }
   }
 
+  async function readProgressFromFirestore(uid) {
+    if (!db) return null;
+    try {
+      const progressRef = doc(db, "users", uid, "progress", "main");
+      const snap = await getDoc(progressRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        return {
+          goodIds: Array.isArray(data?.goodIds) ? data.goodIds : [],
+          badIds: Array.isArray(data?.badIds) ? data.badIds : [],
+          answersById: typeof data?.answersById === "object" ? data.answersById : {},
+          submittedAnswerIndexById: typeof data?.submittedAnswerIndexById === "object" ? data.submittedAnswerIndexById : {}
+        };
+      }
+    } catch (error) {
+      console.error("Error reading progress from Firestore:", error);
+    }
+    return null;
+  }
+
+  async function writeProgressToFirestore(uid, progress) {
+    if (!db) return;
+    try {
+      const progressRef = doc(db, "users", uid, "progress", "main");
+      await setDoc(progressRef, {
+        schemaVersion: 1,
+        goodIds: progress.goodIds,
+        badIds: progress.badIds,
+        answersById: progress.answersById,
+        submittedAnswerIndexById: progress.submittedAnswerIndexById,
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      console.error("Error writing progress to Firestore:", error);
+    }
+  }
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -357,6 +423,18 @@ export default function HomePage() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(learning.progress));
   }, [learning.progress]);
+
+  useEffect(() => {
+    if (!authUser) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      writeProgressToFirestore(authUser.uid, learning.progress);
+    }, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, [authUser, learning.progress]);
 
   const answeredLearningCount = Object.keys(learning.progress.answersById).length;
   const learningCompletion = questions.length
