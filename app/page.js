@@ -44,6 +44,7 @@ export default function HomePage() {
     order: [],
     currentIndex: 0,
     selectedAnswerIndex: null,
+    showFeedback: false,
     progress: {
       goodIds: [],
       badIds: [],
@@ -399,7 +400,8 @@ export default function HomePage() {
       mode,
       order,
       currentIndex: 0,
-      selectedAnswerIndex: null
+      selectedAnswerIndex: null,
+      showFeedback: false
     }));
     setView("learning");
   }
@@ -408,6 +410,11 @@ export default function HomePage() {
     if (!learningQuestion || learning.selectedAnswerIndex == null) {
       return;
     }
+
+    setLearning((prev) => ({
+      ...prev,
+      showFeedback: true
+    }));
 
     const isCorrect = Boolean(
       learningQuestion.answers?.[learning.selectedAnswerIndex]?.correct
@@ -458,7 +465,8 @@ export default function HomePage() {
         ...prev,
         order,
         currentIndex: index,
-        selectedAnswerIndex: null
+        selectedAnswerIndex: null,
+        showFeedback: false
       };
     });
     setView("learning");
@@ -532,7 +540,7 @@ export default function HomePage() {
   }
 
   function getLearningAnswerTone(answer, answerIndex) {
-    if (learningSubmittedIndex == null) {
+    if (!learning.showFeedback || learningSubmittedIndex == null) {
       return "";
     }
 
@@ -779,16 +787,24 @@ export default function HomePage() {
             <h2>{modeLabel}</h2>
           </div>
           <div className="actions-inline">
-            <button className="btn ghost" onClick={openLearningSetup}>
-              Setări
-            </button>
-            <button
-              className="btn ghost"
-              onClick={() => startLearning("mistakes")}
-              disabled={!learning.progress.badIds.length}
-            >
-              Parcurge greșelile
-            </button>
+            {learning.mode === "mistakes" ? (
+              <button className="btn ghost" onClick={openLearningSetup}>
+                Învoi la setări
+              </button>
+            ) : (
+              <>
+                <button className="btn ghost" onClick={openLearningSetup}>
+                  Setări
+                </button>
+                <button
+                  className="btn ghost"
+                  onClick={() => startLearning("mistakes")}
+                  disabled={!learning.progress.badIds.length}
+                >
+                  Parcurge greșelile
+                </button>
+              </>
+            )}
             <button className="btn ghost" onClick={() => setView("home")}>
               Acasă
             </button>
@@ -848,10 +864,11 @@ export default function HomePage() {
                   />
                   <span className="answer-content">
                     <span>{answer.text}</span>
-                    {learningSubmittedIndex != null && learningSaved === false && answer.correct ? (
+                    {learning.showFeedback && learningSubmittedIndex != null && learningSaved === false && answer.correct ? (
                       <small className="answer-note answer-note-correct">Răspunsul corect</small>
                     ) : null}
-                    {learningSubmittedIndex != null &&
+                    {learning.showFeedback &&
+                    learningSubmittedIndex != null &&
                     learningSaved === false &&
                     learningSubmittedIndex === answerIndex &&
                     !answer.correct ? (
@@ -863,12 +880,14 @@ export default function HomePage() {
             })}
           </div>
 
-          <p className={`feedback ${learningSaved == null ? "" : learningSaved ? "ok" : "bad"}`}>
-            {learningSaved == null
+          <p className={`feedback ${!learning.showFeedback ? "" : learningSaved == null ? "" : learningSaved ? "ok" : "bad"}`}>
+            {!learning.showFeedback
               ? "Alege un răspuns și verifică-l."
-              : learningSaved
-                ? "Perfect. Întrebarea este marcată corect."
-                : "Ai greșit. Răspunsul corect este evidențiat cu verde, iar alegerea ta cu roșu."}
+              : learningSaved == null
+                ? "Alege un răspuns și verifică-l."
+                : learningSaved
+                  ? "Perfect. Întrebarea este marcată corect."
+                  : "Ai greșit. Răspunsul corect este evidențiat cu verde, iar alegerea ta cu roșu."}
           </p>
         </article>
 
@@ -880,7 +899,8 @@ export default function HomePage() {
               setLearning((prev) => ({
                 ...prev,
                 currentIndex: Math.max(0, prev.currentIndex - 1),
-                selectedAnswerIndex: null
+                selectedAnswerIndex: null,
+                showFeedback: false
               }))
             }
           >
@@ -896,7 +916,8 @@ export default function HomePage() {
               setLearning((prev) => ({
                 ...prev,
                 currentIndex: Math.min(prev.order.length - 1, prev.currentIndex + 1),
-                selectedAnswerIndex: null
+                selectedAnswerIndex: null,
+                showFeedback: false
               }))
             }
           >
@@ -1114,7 +1135,6 @@ export default function HomePage() {
         <div className="topbar-inner">
           <div className="brand">
             <h1>Sea Skipper Trainer</h1>
-            <p className="topbar-subtitle">Learning + Testing</p>
           </div>
 
           <nav className="nav-actions" aria-label="Cont">
